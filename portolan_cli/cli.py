@@ -2643,6 +2643,22 @@ def push(
     if catalog_path is None:
         catalog_path = require_catalog_root(use_json, "push")
 
+    # Check if active backend supports push
+    active_backend = get_setting("backend", catalog_path=catalog_path)
+    if active_backend is not None and active_backend != "file":
+        msg = (
+            f"Push is not supported with the '{active_backend}' backend. "
+            f"The {active_backend} backend manages versions through its catalog."
+        )
+        if use_json:
+            envelope = error_envelope(
+                "push", [ErrorDetail(type="NotImplementedError", message=msg)]
+            )
+            output_json_envelope(envelope)
+        else:
+            error(msg)
+        raise SystemExit(1)
+
     # Resolve destination: CLI arg > env var > config file
     resolved_destination = get_setting(
         "remote",
@@ -2890,6 +2906,7 @@ def pull_command(
         portolan pull s3://mybucket/catalog
         portolan pull s3://mybucket/catalog --workers 4
     """
+    from portolan_cli.config import get_setting
     from portolan_cli.pull import pull as pull_fn
     from portolan_cli.pull import pull_all_collections
 
@@ -2899,6 +2916,22 @@ def pull_command(
     # Use explicit --catalog if provided, otherwise auto-detect
     if catalog_path is None:
         catalog_path = require_catalog_root(use_json, "pull")
+
+    # Check if active backend supports pull
+    active_backend = get_setting("backend", catalog_path=catalog_path)
+    if active_backend is not None and active_backend != "file":
+        msg = (
+            f"Pull is not supported with the '{active_backend}' backend. "
+            f"The {active_backend} backend manages versions through its catalog."
+        )
+        if use_json:
+            envelope = error_envelope(
+                "pull", [ErrorDetail(type="NotImplementedError", message=msg)]
+            )
+            output_json_envelope(envelope)
+        else:
+            error(msg)
+        raise SystemExit(1)
 
     # Catalog-wide pull (no --collection specified)
     if collection is None:
