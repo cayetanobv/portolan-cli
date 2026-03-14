@@ -174,11 +174,11 @@ class TestDetectStateUnmanagedStac:
         assert state == CatalogState.UNMANAGED_STAC
 
     @pytest.mark.unit
-    def test_catalog_json_with_partial_portolan_is_unmanaged(self, tmp_path: Path) -> None:
-        """catalog.json with partial .portolan (only config) is UNMANAGED_STAC.
+    def test_catalog_json_with_config_yaml_is_managed(self, tmp_path: Path) -> None:
+        """catalog.json with .portolan/config.yaml (no state.json) is MANAGED.
 
-        The presence of catalog.json without full management files
-        indicates an unmanaged STAC catalog.
+        This handles iceberg backend catalogs where state.json is not created.
+        config.yaml + catalog.json is sufficient to indicate a managed catalog.
         """
         catalog_data = {
             "type": "Catalog",
@@ -191,10 +191,9 @@ class TestDetectStateUnmanagedStac:
         portolan_dir = tmp_path / ".portolan"
         portolan_dir.mkdir()
         (portolan_dir / "config.yaml").write_text("{}")
-        # Note: state.json is missing, so not fully managed
 
         state = detect_state(tmp_path)
-        assert state == CatalogState.UNMANAGED_STAC
+        assert state == CatalogState.MANAGED
 
 
 def is_case_sensitive_fs(tmp_path: Path) -> bool:

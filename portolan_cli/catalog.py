@@ -83,6 +83,10 @@ def detect_state(path: Path) -> CatalogState:
     if config_file.exists() and state_file.exists():
         return CatalogState.MANAGED
 
+    # Iceberg backend: config.yaml + catalog.json is managed (no state.json)
+    if config_file.exists() and root_catalog.exists():
+        return CatalogState.MANAGED
+
     # Check for unmanaged STAC catalog (catalog.json at root, but not managed)
     if root_catalog.exists():
         return CatalogState.UNMANAGED_STAC
@@ -304,6 +308,7 @@ def init_catalog(
     *,
     title: str | None = None,
     description: str | None = None,
+    backend: str = "file",
 ) -> tuple[Path, list[str]]:
     """Initialize a new Portolan catalog with the v2 file structure.
 
@@ -350,6 +355,15 @@ def init_catalog(
     if state == CatalogState.UNMANAGED_STAC:
         raise UnmanagedStacCatalogError(str(path))
 
+    # Validate non-file backends are available before creating any files
+    if backend != "file":
+        from portolan_cli.backends import get_backend
+
+        try:
+            get_backend(backend)
+        except ValueError as e:
+            raise CatalogInitError(str(e)) from e
+
     warnings: list[str] = []
 
     # Auto-extract id from directory name
@@ -376,28 +390,32 @@ def init_catalog(
     except OSError as e:
         raise CatalogInitError(f"Cannot create .portolan directory: {e}") from e
 
-    # Step 2: config.yaml - sentinel file per ADR-0027 (not enough for MANAGED alone)
+    # Step 2: config.yaml - sentinel file per ADR-0027
     # Also serves as user configuration file for settings like remote, aws_profile, etc.
+    config_content = "# Portolan configuration\n"
+    if backend != "file":
+        config_content = f"# Portolan configuration\nbackend: {backend}\n"
     try:
-        (portolan_dir / "config.yaml").write_text("# Portolan configuration\n")
+        (portolan_dir / "config.yaml").write_text(config_content)
     except OSError as e:
         raise CatalogInitError(f"Cannot write config.yaml: {e}") from e
 
-    # Step 3: versions.json - minimal catalog-level versioning
+    # Step 3: versions.json - only for file backend
     # Per ADR-0023: versions.json is consumer-visible metadata and must live at
     # the catalog root alongside STAC files, NOT inside .portolan/ (which is
     # reserved for internal tooling state only).
-    now = datetime.now(timezone.utc)
-    versions_data = {
-        "schema_version": "1.0.0",
-        "catalog_id": catalog_id,
-        "created": now.isoformat(),
-        "collections": {},
-    }
-    try:
-        (path / "versions.json").write_text(json.dumps(versions_data, indent=2) + "\n")
-    except OSError as e:
-        raise CatalogInitError(f"Cannot write versions.json: {e}") from e
+    if backend == "file":
+        now = datetime.now(timezone.utc)
+        versions_data = {
+            "schema_version": "1.0.0",
+            "catalog_id": catalog_id,
+            "created": now.isoformat(),
+            "collections": {},
+        }
+        try:
+            (path / "versions.json").write_text(json.dumps(versions_data, indent=2) + "\n")
+        except OSError as e:
+            raise CatalogInitError(f"Cannot write versions.json: {e}") from e
 
     # Step 4: Create STAC catalog using pystac
     catalog = pystac.Catalog(
@@ -431,13 +449,16 @@ def init_catalog(
     except OSError as e:
         raise CatalogInitError(f"Cannot update catalog.json with self link: {e}") from e
 
-    # Step 6: state.json - LAST (flips to MANAGED state)
+    # Step 6: state.json - LAST (flips to MANAGED state for file backend)
     # This MUST be the final write. Once state.json exists alongside config.yaml,
     # detect_state() will report MANAGED (per ADR-0027). All files must be in place first.
-    try:
-        (portolan_dir / "state.json").write_text("{}\n")
-    except OSError as e:
-        raise CatalogInitError(f"Cannot write state.json: {e}") from e
+    # For non-file backends (e.g., iceberg), state.json is not needed — config.yaml +
+    # catalog.json is sufficient for detect_state() to return MANAGED.
+    if backend == "file":
+        try:
+            (portolan_dir / "state.json").write_text("{}\n")
+        except OSError as e:
+            raise CatalogInitError(f"Cannot write state.json: {e}") from e
 
     return catalog_file, warnings
 

@@ -49,11 +49,7 @@ from portolan_cli.stac import (
     load_catalog,
 )
 from portolan_cli.versions import (
-    Asset,
-    VersionsFile,
-    add_version,
     read_versions,
-    write_versions,
 )
 
 logger = logging.getLogger(__name__)
@@ -791,9 +787,11 @@ def _update_versions(
     *,
     asset_files: dict[str, tuple[Path, str]] | None = None,
 ) -> None:
-    """Update versions.json with assets.
+    """Update versions via the active backend.
 
     Supports both single-file (backward compat) and multi-file modes.
+    Routes through version_ops.publish_version() so that the configured
+    backend (file or plugin) handles storage.
 
     Args:
         collection_dir: Path to collection directory.
@@ -803,66 +801,27 @@ def _update_versions(
         asset_files: Dict mapping filename to (path, checksum) tuples.
             If provided, output_path/checksum are ignored.
     """
-    versions_path = collection_dir / "versions.json"
-
-    if versions_path.exists():
-        versions_file = read_versions(versions_path)
-    else:
-        versions_file = VersionsFile(
-            spec_version="1.0.0",
-            current_version=None,
-            versions=[],
-        )
-
-    # Compute new version
-    if versions_file.current_version is None:
-        new_version = "1.0.0"
-    else:
-        # Simple version increment (could be smarter)
-        parts = versions_file.current_version.split(".")
-        parts[-1] = str(int(parts[-1]) + 1)
-        new_version = ".".join(parts)
+    from portolan_cli.version_ops import publish_version
 
     collection_id = collection_dir.name
+    catalog_root = collection_dir.parent
 
-    # Build assets dict - support both single-file and multi-file modes
-    assets: dict[str, Asset] = {}
+    # Build assets dict (asset_key -> file_path) for the backend
+    assets: dict[str, str] = {}
     if asset_files is not None:
-        # Multi-asset mode (per issue #133)
-        # Use item-scoped keys ({item_id}/{filename}) for multi-asset tracking
-        for filename, (file_path, file_checksum) in asset_files.items():
-            href = f"{collection_id}/{item_id}/{filename}"
+        for filename, (file_path, _checksum) in asset_files.items():
             asset_key = f"{item_id}/{filename}"
-            stat = file_path.stat()
-            # For directory-format assets (e.g., FileGDB), size_bytes is the inode
-            # size which is not meaningful. Store 0 and rely on sha256 fingerprint
-            # (compute_dir_checksum) and mtime for change detection.
-            size_bytes = stat.st_size if file_path.is_file() else 0
-            assets[asset_key] = Asset(
-                sha256=file_checksum,
-                size_bytes=size_bytes,
-                href=href,
-                mtime=stat.st_mtime,
-            )
+            assets[asset_key] = str(file_path)
     elif output_path is not None and checksum is not None:
-        # Legacy single-file mode (backward compatibility)
-        href = f"{collection_id}/{item_id}/{output_path.name}"
-        assets[output_path.name] = Asset(
-            sha256=checksum,
-            size_bytes=output_path.stat().st_size,
-            href=href,
-        )
+        assets[output_path.name] = str(output_path)
     else:
         raise ValueError("Either asset_files or (output_path, checksum) must be provided")
 
-    updated = add_version(
-        versions_file,
-        version=new_version,
+    publish_version(
+        collection_id,
         assets=assets,
-        breaking=False,
+        catalog_root=catalog_root,
     )
-
-    write_versions(versions_path, updated)
 
 
 def list_datasets(
@@ -1855,7 +1814,7 @@ def _increment_version(version: str) -> str:
 
 
 def _remove_from_versions(file_path: Path, versions_path: Path) -> None:
-    """Remove a file from versions.json tracking.
+    """Remove a file from version tracking via the active backend.
 
     This creates a new version entry without the specified file.
 
@@ -1870,52 +1829,30 @@ def _remove_from_versions(file_path: Path, versions_path: Path) -> None:
     if not versions_file.versions:
         return
 
-    # Get current assets, removing the file
+    # Check if the file is tracked under any key
     current = versions_file.versions[-1]
     filename = file_path.name
     parquet_name = f"{file_path.stem}.parquet"
 
-    new_assets = {
-        name: asset
-        for name, asset in current.assets.items()
-        if name != filename and name != parquet_name
+    removed_keys = {
+        name
+        for name in current.assets
+        if name == filename or name == parquet_name
     }
 
-    if len(new_assets) == len(current.assets):
+    if not removed_keys:
         # File wasn't tracked, nothing to do
         return
 
-    # Compute new version number safely
-    new_version = _increment_version(versions_file.current_version or "0.0.0")
+    from portolan_cli.version_ops import publish_version
 
-    # Note: Even if new_assets is empty, we preserve version history by creating
-    # an empty version entry rather than deleting versions.json entirely.
-    # This maintains collection state and allows seeing what files were removed.
+    collection_id = versions_path.parent.name
+    catalog_root = versions_path.parent.parent
 
-    # Create new version entry
-    new_assets_typed = {
-        name: Asset(
-            sha256=asset.sha256,
-            size_bytes=asset.size_bytes,
-            href=asset.href,
-            source_path=asset.source_path,
-            source_mtime=asset.source_mtime,
-            mtime=asset.mtime,
-        )
-        for name, asset in new_assets.items()
-    }
-
-    # Pass removed= so add_version excludes these from the snapshot
-    # (otherwise the snapshot model would re-add them from previous version)
-    removed_keys = {filename, parquet_name}
-
-    updated = add_version(
-        versions_file,
-        version=new_version,
-        assets=new_assets_typed,
-        breaking=False,
-        message=f"Removed {filename}",
+    publish_version(
+        collection_id,
+        assets={},
         removed=removed_keys,
+        message=f"Removed {filename}",
+        catalog_root=catalog_root,
     )
-
-    write_versions(versions_path, updated)

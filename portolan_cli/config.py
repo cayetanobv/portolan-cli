@@ -32,7 +32,7 @@ from typing import Any
 import yaml
 
 # Known settings for documentation/validation (but unknown keys are still allowed)
-KNOWN_SETTINGS: frozenset[str] = frozenset({"remote", "aws_profile", "ignored_files"})
+KNOWN_SETTINGS: frozenset[str] = frozenset({"remote", "aws_profile", "ignored_files", "backend"})
 
 # Default glob patterns for files to exclude from asset tracking (per ADR-0028).
 # These cover common OS-generated junk files and temporary files that should
