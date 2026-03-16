@@ -192,6 +192,12 @@ def cli(ctx: click.Context, output_format: str) -> None:
     default=None,
     help="Description of the catalog.",
 )
+@click.option(
+    "--backend",
+    type=str,
+    default="file",
+    help="Versioning backend to use (e.g., 'file', 'iceberg').",
+)
 @click.pass_context
 def init(
     ctx: click.Context,
@@ -200,6 +206,7 @@ def init(
     auto_mode: bool,
     title: str | None,
     description: str | None,
+    backend: str,
 ) -> None:
     """Initialize a new Portolan catalog.
 
@@ -219,6 +226,7 @@ def init(
         portolan init --auto                # Skip prompts, use defaults
         portolan init --title "My Catalog"  # Set title
         portolan init /path/to/data --auto  # Initialize in specific directory
+        portolan init --backend iceberg     # Use Iceberg backend
     """
 
     from portolan_cli.catalog import init_catalog
@@ -248,6 +256,7 @@ def init(
             path,
             title=title,
             description=description,
+            backend=backend,
         )
 
         # Read back catalog ID for display
