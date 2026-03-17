@@ -2655,10 +2655,17 @@ def push(
     # Check if active backend supports push
     active_backend = get_setting("backend", catalog_path=catalog_path)
     if active_backend is not None and active_backend != "file":
-        msg = (
-            f"Push is not supported with the '{active_backend}' backend. "
-            f"The {active_backend} backend manages versions through its catalog."
-        )
+        remote = get_setting("remote", catalog_path=catalog_path, collection=collection)
+        if remote:
+            msg = (
+                f"Push is not needed with the '{active_backend}' backend. "
+                f"The `add` command already uploads data to the configured remote."
+            )
+        else:
+            msg = (
+                f"Push is not supported with the '{active_backend}' backend. "
+                f"The {active_backend} backend manages versions through its catalog."
+            )
         if use_json:
             envelope = error_envelope(
                 "push", [ErrorDetail(type="NotImplementedError", message=msg)]
@@ -2917,7 +2924,7 @@ def pull_command(
     """
     from portolan_cli.config import get_setting
     from portolan_cli.pull import pull as pull_fn
-    from portolan_cli.pull import pull_all_collections
+    from portolan_cli.pull import pull_all_collections, pull_iceberg
 
     use_json = should_output_json(ctx, json_output)
 
@@ -2926,21 +2933,43 @@ def pull_command(
     if catalog_path is None:
         catalog_path = require_catalog_root(use_json, "pull")
 
-    # Check if active backend supports pull
+    # Route to iceberg-aware pull if using non-file backend
     active_backend = get_setting("backend", catalog_path=catalog_path)
     if active_backend is not None and active_backend != "file":
-        msg = (
-            f"Pull is not supported with the '{active_backend}' backend. "
-            f"The {active_backend} backend manages versions through its catalog."
+        from portolan_cli.backends import get_backend
+
+        backend = get_backend(active_backend, catalog_root=catalog_path)
+        result = pull_iceberg(
+            remote_url=remote_url,
+            local_root=catalog_path,
+            collection=collection,
+            backend=backend,
+            dry_run=dry_run,
         )
+
         if use_json:
-            envelope = error_envelope(
-                "pull", [ErrorDetail(type="NotImplementedError", message=msg)]
-            )
+            data = {
+                "files_downloaded": result.files_downloaded,
+                "files_skipped": result.files_skipped,
+                "local_version": result.local_version,
+                "remote_version": result.remote_version,
+                "up_to_date": getattr(result, "up_to_date", False),
+            }
+            if result.success:
+                envelope = success_envelope("pull", data)
+            else:
+                envelope = error_envelope(
+                    "pull",
+                    [ErrorDetail(type="PullError", message="Iceberg pull failed")],
+                    data=data,
+                )
             output_json_envelope(envelope)
         else:
-            error(msg)
-        raise SystemExit(1)
+            _output_pull_human(result, dry_run=dry_run)
+
+        if not result.success:
+            raise SystemExit(1)
+        return
 
     # Catalog-wide pull (no --collection specified)
     if collection is None:
