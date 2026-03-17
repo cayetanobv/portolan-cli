@@ -2426,10 +2426,17 @@ def push(
     # Check if active backend supports push
     active_backend = get_setting("backend", catalog_path=catalog_path)
     if active_backend is not None and active_backend != "file":
-        msg = (
-            f"Push is not supported with the '{active_backend}' backend. "
-            f"The {active_backend} backend manages versions through its catalog."
-        )
+        remote = get_setting("remote", catalog_path=catalog_path, collection=collection)
+        if remote:
+            msg = (
+                f"Push is not needed with the '{active_backend}' backend. "
+                f"The `add` command already uploads data to the configured remote."
+            )
+        else:
+            msg = (
+                f"Push is not supported with the '{active_backend}' backend. "
+                f"The {active_backend} backend manages versions through its catalog."
+            )
         if use_json:
             envelope = error_envelope(
                 "push", [ErrorDetail(type="NotImplementedError", message=msg)]
@@ -2602,33 +2609,32 @@ def pull_command(
     """
     from portolan_cli.config import get_setting
     from portolan_cli.pull import pull as pull_fn
+    from portolan_cli.pull import pull_iceberg
 
     use_json = should_output_json(ctx)
 
-    # Check if active backend supports pull
+    # Route to iceberg-aware pull if using non-file backend
     active_backend = get_setting("backend", catalog_path=catalog_path)
     if active_backend is not None and active_backend != "file":
-        msg = (
-            f"Pull is not supported with the '{active_backend}' backend. "
-            f"The {active_backend} backend manages versions through its catalog."
-        )
-        if use_json:
-            envelope = error_envelope(
-                "pull", [ErrorDetail(type="NotImplementedError", message=msg)]
-            )
-            output_json_envelope(envelope)
-        else:
-            error(msg)
-        raise SystemExit(1)
+        from portolan_cli.backends import get_backend
 
-    result = pull_fn(
-        remote_url=remote_url,
-        local_root=catalog_path,
-        collection=collection,
-        force=force,
-        dry_run=dry_run,
-        profile=profile,
-    )
+        backend = get_backend(active_backend, catalog_root=catalog_path)
+        result = pull_iceberg(
+            remote_url=remote_url,
+            local_root=catalog_path,
+            collection=collection,
+            backend=backend,
+            dry_run=dry_run,
+        )
+    else:
+        result = pull_fn(
+            remote_url=remote_url,
+            local_root=catalog_path,
+            collection=collection,
+            force=force,
+            dry_run=dry_run,
+            profile=profile,
+        )
 
     if use_json:
         data = {
