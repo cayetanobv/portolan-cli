@@ -710,10 +710,19 @@ def add_dataset(
         is_collection_level_asset=is_collection_level_asset,
     )
 
-    # Step 11: Upload to remote if iceberg backend + remote configured
+    # Step 10b: Update collection.json with STAC extension metadata (Iceberg backend)
     from portolan_cli.config import get_setting
 
     active_backend = get_setting("backend", catalog_path=catalog_root)
+    if active_backend == "iceberg":
+        _update_collection_stac_extensions(
+            catalog_root=catalog_root,
+            collection_id=collection_id,
+            collection_dir=collection_dir,
+            collection=collection,
+        )
+
+    # Step 11: Upload to remote if iceberg backend + remote configured
     if active_backend == "iceberg":
         remote = get_setting("remote", catalog_path=catalog_root, collection=collection_id)
         _upload_to_remote_if_configured(
@@ -969,6 +978,36 @@ def _update_catalog_links(catalog_root: Path, collection_id: str) -> None:
         catalog.add_link(pystac.Link(rel="child", target=collection_href))
         # Re-save catalog
         catalog.save(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+
+
+def _update_collection_stac_extensions(
+    *,
+    catalog_root: Path,
+    collection_id: str,
+    collection_dir: Path,
+    collection: pystac.Collection,
+) -> None:
+    """Update collection.json with STAC extension metadata from Iceberg backend.
+
+    Adds table:* (Layer 1) and iceberg:* (Layer 2) fields to the collection's
+    extra_fields, then re-saves collection.json.
+    """
+    from portolan_cli.backends import get_backend
+
+    try:
+        backend = get_backend("iceberg", catalog_root=catalog_root)
+        if hasattr(backend, "get_stac_metadata"):
+            stac_metadata = backend.get_stac_metadata(collection_id)
+
+            # Update collection extra_fields
+            for key, value in stac_metadata.items():
+                collection.extra_fields[key] = value
+
+            # Re-save collection.json
+            collection.normalize_hrefs(str(collection_dir))
+            collection.save(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+    except Exception:
+        logger.debug("Could not update STAC extensions for collection %s", collection_id)
 
 
 def _upload_to_remote_if_configured(
