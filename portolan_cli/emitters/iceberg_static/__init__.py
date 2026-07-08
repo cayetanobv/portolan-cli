@@ -18,11 +18,12 @@ Key properties (ported from the production portolan-cats generator):
   write v3 manifests, but readers (DuckDB >= 1.5.3) accept a v3 metadata JSON
   whose snapshot points at V2 manifests.
 
+This package ``__init__`` is deliberately import-free: ``plan`` and
+``discovery`` are stdlib-only and must stay importable without the [iceberg]
+extra; only ``schema``/``table``/``emitter`` need pyiceberg. The registry
+(``portolan_cli.emitters.get_emitter``) imports the emitter module directly.
+
 Install with: pip install portolan-cli[iceberg]
 """
 
 from __future__ import annotations
-
-from portolan_cli.emitters.iceberg_static.emitter import IcebergStaticEmitter
-
-__all__ = ["IcebergStaticEmitter"]

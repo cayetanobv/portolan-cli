@@ -48,6 +48,8 @@ class TablePlan:
         parts: Physical parquet files, one manifest data-file entry each.
         location_uri: Absolute table location (``<public_base>/<key>``).
         properties: Table properties (title, license, version stamp, ...).
+        collection_file: The collection.json this table was planned from, so
+            the discovery step can stamp it without re-walking the catalog.
     """
 
     namespace: str
@@ -56,6 +58,7 @@ class TablePlan:
     parts: list[TablePart] = field(default_factory=list)
     location_uri: str = ""
     properties: dict[str, str] = field(default_factory=dict)
+    collection_file: Path | None = None
 
 
 def plan_tables(catalog_root: Path, *, public_base: str, namespace: str) -> list[TablePlan]:
@@ -98,6 +101,7 @@ def _plan_collection(
         parts=parts,
         location_uri=f"{base}/{key}",
         properties=_properties(collection, collection_file.parent),
+        collection_file=collection_file,
     )
 
 

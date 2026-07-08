@@ -81,18 +81,19 @@ kind for publish-time derived serializations.**
   schema need upstream agreement first. Production precedent uses
   `catalog.datasets` with a flattened schema; PR #433 sketches `items` with a
   STAC-fidelity core. Until pinned, this emitter stages data tables only.
-- **STAC-side discovery.** Without metadata in the STAC JSON, the surface is
-  only findable by convention (a knowing client probes `ATTACH <public_base>`
-  and falls back). The fix is two-layered and belongs to the push wiring, not
-  the emitter (stamping `collection.json` is a catalog mutation, and emitters
-  never mutate the catalog): (a) per collection, the
+- **Invoking STAC-side discovery from push.** Without metadata in the STAC
+  JSON, the surface is only findable by convention (a knowing client probes
+  `ATTACH <public_base>` and falls back). The stamping itself SHIPS with this
+  ADR as `emitters/iceberg_static/discovery.py::apply_discovery` — per
+  collection the
   [STAC Iceberg Extension](https://github.com/portolan-sdi/stac-iceberg-extension)
-  fields — `iceberg:catalog_type: "rest"`, `iceberg:catalog_uri:
-  <public_base>`, `iceberg:table_id` — written by the STAC-generation step
-  from what the emitter planned; blocked on the extension allowing
-  `iceberg:format_version: 3` (its schema stops at 2 today); (b) at the
-  catalog root, a link to `./v1/config` advertising the whole surface for
-  clients that start at `catalog.json`.
+  fields (`iceberg:catalog_type: "rest"`, `iceberg:catalog_uri:
+  <public_base>`, `iceberg:table_id`, `iceberg:format_version: 3`), plus one
+  `rel: "iceberg-rest"` link to `./v1/config` on the root catalog. Because it
+  mutates the catalog, it is an explicit separate step, never called by
+  `emit()`: the push wiring invokes it after emit and before the metadata
+  upload. Note the extension's schema currently caps `iceberg:format_version`
+  at 2; allowing 3 is a pending upstream change to that repo.
 - Spec addendum (optional extension: MAY publish, MUST conform if published).
 - Private-catalog authentication (unchanged from PR #433's scoping).
 
