@@ -114,6 +114,7 @@ AI agents will write most of the code. Human review does not scale to match AI o
 | [0054](context/shared/adr/0054-arcgis-folder-recursion-and-structure.md) | ArcGIS folder recursion (default-on), folder URLs, token auth pass-through, nested-folder subcatalogs |
 | [0055](context/shared/adr/0055-extension-registry-single-source.md) | Single-source the recognized-extension vocabulary via a typed in-package registry (derives the formats/constants/scan_classify/add maps; drops dead `.raquet`) |
 | [0056](context/shared/adr/0056-hermetic-shipped-schema-validation.md) | Validate compliance against the shipped STAC schemas via a vendored STAC v1.1.0 `$ref` closure + `referencing.Registry` (hermetic); `format` off pending href policy (#573); deletes inline stubs (#557) |
+| [0057](context/shared/adr/0057-iceberg-static-emitter.md) | iceberg-static as a publish-time *emitter* (not a backend): static Iceberg REST projection of the STAC catalog, zero-copy over published GeoParquet, STAC JSON stays source of truth (proposed) |
 
 ## Common Commands
 
