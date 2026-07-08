@@ -450,3 +450,13 @@ class ArcGISAuthError(PortolanError):
     """
 
     code = "PRTLN-EXT002"
+
+
+# Emitter Errors (PRTLN-EMIT*)
+class EmitError(PortolanError):
+    """Raised when a publish-time emitter cannot produce its output.
+
+    Error code: PRTLN-EMIT001
+    """
+
+    code = "PRTLN-EMIT001"
