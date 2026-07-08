@@ -6,8 +6,10 @@ pointers that make it discoverable:
 
 - Each projected collection gets the `STAC Iceberg Extension
   <https://github.com/portolan-sdi/stac-iceberg-extension>`_ fields:
-  ``iceberg:catalog_type`` ("rest"), ``iceberg:catalog_uri`` (the public
-  base), ``iceberg:table_id`` and ``iceberg:format_version``.
+  ``iceberg:catalog_type`` ("static"), ``iceberg:catalog_uri`` (the public
+  base), ``iceberg:rest_prefix``, ``iceberg:authorization_type`` ("none"),
+  ``iceberg:table_id``, ``iceberg:format_version``,
+  ``iceberg:metadata_location`` and ``iceberg:current_snapshot_id``.
 - The root ``catalog.json`` gets one ``rel: "iceberg-rest"`` link to
   ``./v1/config``, advertising the whole surface to clients that start at the
   catalog rather than a collection.
@@ -38,17 +40,21 @@ REST_CONFIG_LINK_REL = "iceberg-rest"
 FORMAT_VERSION = 3
 
 
-def apply_discovery(catalog_root: Path, plan: list[TablePlan], *, public_base: str) -> list[Path]:
+def apply_discovery(
+    catalog_root: Path, plan: list[TablePlan], *, public_base: str, prefix: str = "sdi"
+) -> list[Path]:
     """Stamp discovery pointers for every planned table; return written paths.
 
-    Files whose stamped content is already current are left untouched.
+    ``prefix`` must match the REST surface's ``v1/config`` prefix override
+    (the emitter's ``prefix`` option). Files whose stamped content is already
+    current are left untouched.
     """
     base = public_base.rstrip("/")
     written: list[Path] = []
     for table in plan:
         if table.collection_file is None:
             continue
-        if _stamp_collection(table.collection_file, table, base):
+        if _stamp_collection(table.collection_file, table, base, prefix):
             written.append(table.collection_file)
     catalog_file = catalog_root / "catalog.json"
     if catalog_file.is_file() and _stamp_catalog(catalog_file):
@@ -56,8 +62,16 @@ def apply_discovery(catalog_root: Path, plan: list[TablePlan], *, public_base: s
     return written
 
 
-def _stamp_collection(collection_file: Path, table: TablePlan, base: str) -> bool:
-    """Write the extension fields onto one collection; True when changed."""
+def _stamp_collection(collection_file: Path, table: TablePlan, base: str, prefix: str) -> bool:
+    """Write the extension fields onto one collection; True when changed.
+
+    Field vocabulary follows the merged extension schema: ``static`` is the
+    catalog type for a serverless catalog on object storage, the REST prefix
+    and authorization mode tell a client how to ATTACH, ``metadata_location``
+    is the direct route (``iceberg_scan()`` / PyIceberg ``StaticTable``)
+    that skips the REST surface entirely, and the snapshot id is a string
+    because Iceberg ids are 64-bit and lose precision as JSON numbers.
+    """
     original = collection_file.read_text()
     doc = json.loads(original)
     if not isinstance(doc, dict):
@@ -68,10 +82,15 @@ def _stamp_collection(collection_file: Path, table: TablePlan, base: str) -> boo
     if ICEBERG_EXTENSION_SCHEMA not in extensions:
         extensions = [*extensions, ICEBERG_EXTENSION_SCHEMA]
     doc["stac_extensions"] = extensions
-    doc["iceberg:catalog_type"] = "rest"
+    doc["iceberg:catalog_type"] = "static"
     doc["iceberg:catalog_uri"] = base
+    doc["iceberg:rest_prefix"] = prefix
+    doc["iceberg:authorization_type"] = "none"
     doc["iceberg:table_id"] = f"{table.namespace}.{table.name}"
     doc["iceberg:format_version"] = FORMAT_VERSION
+    doc["iceberg:metadata_location"] = f"{table.location_uri}/metadata/v1.metadata.json"
+    # The emitter regenerates the table as snapshot 1 on every publish.
+    doc["iceberg:current_snapshot_id"] = "1"
     return _write_if_changed(collection_file, doc, original)
 
 

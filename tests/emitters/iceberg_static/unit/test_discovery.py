@@ -39,13 +39,33 @@ def _read(path: Path) -> dict[str, object]:
 
 def test_projected_collections_get_extension_fields(stamped: Path) -> None:
     col = _read(stamped / "tunnels" / "collection.json")
-    assert col["iceberg:catalog_type"] == "rest"
+    # Vocabulary as merged upstream (stac-iceberg-extension#4): a serverless
+    # catalog on object storage is catalog_type "static", with the REST prefix
+    # and authorization mode a client needs to ATTACH it.
+    assert col["iceberg:catalog_type"] == "static"
     assert col["iceberg:catalog_uri"] == BASE
+    assert col["iceberg:rest_prefix"] == "sdi"
+    assert col["iceberg:authorization_type"] == "none"
     assert col["iceberg:table_id"] == "collections.tunnels"
     assert col["iceberg:format_version"] == 3
+    # Direct URL of the table's metadata.json, usable with iceberg_scan() or
+    # PyIceberg StaticTable without going through the REST surface.
+    assert col["iceberg:metadata_location"] == (
+        f"{BASE}/data/collections/tunnels/metadata/v1.metadata.json"
+    )
+    # A string: Iceberg snapshot ids are 64-bit and lose precision as JSON
+    # numbers. The emitter always writes snapshot 1.
+    assert col["iceberg:current_snapshot_id"] == "1"
     extensions = col["stac_extensions"]
     assert isinstance(extensions, list)
     assert ICEBERG_EXTENSION_SCHEMA in extensions
+
+
+def test_prefix_option_flows_into_the_stamp(stac_catalog: Path) -> None:
+    plan = plan_tables(stac_catalog, public_base=BASE, namespace="collections")
+    apply_discovery(stac_catalog, plan, public_base=BASE, prefix="custom")
+    col = _read(stac_catalog / "tunnels" / "collection.json")
+    assert col["iceberg:rest_prefix"] == "custom"
 
 
 def test_unprojected_collections_are_untouched(stamped: Path) -> None:

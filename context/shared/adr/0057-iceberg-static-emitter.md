@@ -87,13 +87,16 @@ kind for publish-time derived serializations.**
   ADR as `emitters/iceberg_static/discovery.py::apply_discovery` — per
   collection the
   [STAC Iceberg Extension](https://github.com/portolan-sdi/stac-iceberg-extension)
-  fields (`iceberg:catalog_type: "rest"`, `iceberg:catalog_uri:
-  <public_base>`, `iceberg:table_id`, `iceberg:format_version: 3`), plus one
-  `rel: "iceberg-rest"` link to `./v1/config` on the root catalog. Because it
-  mutates the catalog, it is an explicit separate step, never called by
-  `emit()`: the push wiring invokes it after emit and before the metadata
-  upload. Note the extension's schema currently caps `iceberg:format_version`
-  at 2; allowing 3 is a pending upstream change to that repo.
+  fields (`iceberg:catalog_type: "static"`, `iceberg:catalog_uri:
+  <public_base>`, `iceberg:rest_prefix`, `iceberg:authorization_type:
+  "none"`, `iceberg:table_id`, `iceberg:format_version: 3`,
+  `iceberg:metadata_location`, `iceberg:current_snapshot_id` as a string),
+  plus one `rel: "iceberg-rest"` link to `./v1/config` on the root catalog.
+  Because it mutates the catalog, it is an explicit separate step, never
+  called by `emit()`: the push wiring invokes it after emit and before the
+  metadata upload. The vocabulary matches the extension schema as merged
+  (stac-iceberg-extension#4 added `format_version: 3`, the `static` catalog
+  type, and the connection fields).
 - Spec addendum (optional extension: MAY publish, MUST conform if published).
 - Private-catalog authentication (unchanged from PR #433's scoping).
 
